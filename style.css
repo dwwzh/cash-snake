@@ -1,0 +1,99 @@
+@charset "UTF-8";
+@font-face {
+    font-family: hvts;
+    src: url(./fonts/BreakfastNoodles/Breakfast.otf);
+}
+
+html {
+    height: 100%;
+}
+
+body {
+    color: white;
+    font-family: 'hvts', sans-serif;
+    text-shadow: -5px 7px 10px rgba(2, 2, 2, 0.411);
+    background-color: rgb(39, 68, 39);
+}
+
+.titulo {
+    display: block;
+    margin: 30px auto;
+    background-color: rgba(0, 0, 0, 0.164);
+    border-radius: 10px;
+    padding: 40px 50px 50px 50px;
+    width: 750px;
+    height: 160px;
+}
+
+h2 {
+    display: block;
+    transform: translate(150px, -630px);
+    font-size: 35px;
+}
+
+.controles {
+    display: block;
+    font-size: 20px;
+    width: 400px;
+    padding: 15px;
+    transform: translate(150px, -630px);
+    font-weight: bolder;
+    background-color: rgba(0, 0, 0, 0.151);
+}
+
+h1 {
+    display: block;
+    text-align: center;
+    font-size: 130px;
+    margin: 0;
+}
+
+span {
+    color: rgb(128, 255, 128);
+}
+
+small {
+    display: block;
+    margin: auto;
+    width: 320px;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-weight: 600;
+}
+
+a {
+    display: inline-block;
+    background-color: rgba(0, 0, 0, 0.062);
+    padding: 7px 0px 7px 0px;
+    text-decoration: none;
+    font-weight: bolder;
+    color: rgb(129, 216, 129);
+    transition: transform 0.4s ease;
+}
+
+a:hover {
+    display: inline-block;
+    text-decoration: underline;
+    transform: scale(1.07);
+    border-radius: 10px;
+}
+
+a::before {
+    content: url("");
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    margin: 0px 5px 0px 5px;
+    transform: translateY(-2px);
+    background-size: cover;
+    background-image: url(images/avatar.png);
+    
+}
+
+iframe {
+    display: block;
+    margin: auto;
+    width: 700px;
+    height: 600px;
+    border-radius: 20px;
+    border-color: rgb(112, 228, 112);
+}
