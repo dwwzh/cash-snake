@@ -36,6 +36,7 @@ h2 {
     font-size: 20px;
     width: 400px;
     padding: 15px;
+    border-radius: 10px;
     transform: translate(150px, -630px);
     font-weight: bolder;
     background-color: rgba(0, 0, 0, 0.151);
