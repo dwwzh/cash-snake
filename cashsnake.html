@@ -118,6 +118,11 @@
     letter-spacing: 0.03em;
   }
 
+  .overlay button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   .touch-controls {
     position: absolute;
     bottom: 10px;
@@ -176,10 +181,12 @@
   const scoreEl = document.getElementById('score');
   const overlay = document.getElementById('overlay');
   const startBtn = document.getElementById('startBtn');
-
   const COLS = 20;
+  const RESTART_COOLDOWN_MS = 900;
   let cellSize = 0;
   let snake, prevSnake, dir, nextDir, food, score, alive, tickTimer, speed, lastTickAt, rafId, started;
+  let restartLocked = false;
+  let restartLockTimer;
 
   function resize() {
     const size = Math.min(stage.clientWidth, stage.clientHeight);
@@ -444,9 +451,18 @@
     overlay.querySelector('h2').innerHTML = 'Você <span class="over">Perdeu!</span>';
     overlay.querySelector('p').textContent = 'Dinheiro Coletado: ' + score;
     startBtn.textContent = 'JOGAR DE NOVO';
+    restartLocked = true;
+    startBtn.disabled = true;
+    clearTimeout(restartLockTimer);
+    restartLockTimer = setTimeout(() => {
+      restartLocked = false;
+      startBtn.disabled = false;
+    }, RESTART_COOLDOWN_MS);
+
   }
 
   function start() {
+    if (restartLocked) return;
     reset();
     overlay.classList.add('hidden');
     clearInterval(tickTimer);
@@ -456,6 +472,7 @@
 
   function setDir(x, y) {
     if (!started) {
+      if (restartLocked) return;
       start();
       // ignora só se a primeira tecla for o oposto exato da direção inicial
       // (isso mataria a cobra na hora); qualquer outra direção vale
