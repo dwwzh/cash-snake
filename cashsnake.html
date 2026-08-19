@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CashSnake</title>
+<style>
+@charset "UTF-8";
+@font-face {
+    font-family: brkf;
+    src: url(./fonts/BreakfastNoodles/Breakfast.otf);
+}
+
+  :root {
+    --bg: #084e15;
+    --grid: #27492d;
+    --snake-head: #78c25a;
+    --snake-body: #78c25a;
+    --text: #EAF2E8;
+    --text-dim: #8FB39A;
+    --over-bg: rgba(15, 30, 17, 0.92);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    overflow: hidden;
+    font-family: 'brkf', monospace;
+  }
+
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #stage {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    max-width: 100vmin;
+    max-height: 100vmin;
+    background: var(--bg);
+  }
+
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .hud {
+    position: absolute;
+    top: 12px;
+    left: 14px;
+    color: var(--text);
+    font-weight: bold;
+    font-size: clamp(32px, 2.4vmin, 20px);
+    text-shadow: 0 2px 0 rgba(0,0,0,0.4);
+    letter-spacing: 0.03em;
+    user-select: none;
+  }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: var(--over-bg);
+    color: var(--text);
+    text-align: center;
+    padding: 20px;
+  }
+
+  .overlay.hidden { display: none; }
+
+  span {
+    color: #39c252;
+  }
+
+  .overlay h2 {
+    font-size: clamp(55px, 4vmin, 32px);
+    color: var(--snake-head);
+    letter-spacing: 0.04em;
+    color: white;
+  }
+
+  .overlay h2 .over {
+  color: rgb(128, 255, 128);
+}
+
+.overlay h2:empty {
+  display: none;
+}
+
+  .overlay p {
+    color: var(--text-dim);
+    font-size: clamp(18px, 2vmin, 16px);
+  }
+
+  .overlay button {
+    margin-top: 6px;
+    padding: 10px 22px;
+    font-family: inherit;
+    font-weight: bold;
+    font-size: clamp(16px, 2.2vmin, 16px);
+    background-color: #478643;
+    color: #feffff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    letter-spacing: 0.03em;
+  }
+
+  .touch-controls {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    display: grid;
+    grid-template-columns: repeat(3, 42px);
+    grid-template-rows: repeat(3, 42px);
+    gap: 4px;
+    opacity: 0.85;
+  }
+
+  .touch-controls button {
+    background: rgba(79, 203, 106, 0.18);
+    border: 1px solid var(--snake-body);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 18px;
+    font-family: inherit;
+  }
+
+  .tc-up { grid-column: 2; grid-row: 1; }
+  .tc-left { grid-column: 1; grid-row: 2; }
+  .tc-down { grid-column: 2; grid-row: 3; }
+  .tc-right { grid-column: 3; grid-row: 2; }
+
+  @media (hover: hover) and (pointer: fine) {
+    .touch-controls { display: none; }
+  }
+
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <div class="hud">PONTOS: <span id="score">0</span></div>
+  <canvas id="game"></canvas>
+  <div class="overlay" id="overlay">
+    <h2></h2>
+    <p>Toque em jogar ou pressione uma tecla para começar</p>
+    <button id="startBtn">JOGAR</button>
+  </div>
+
+  <div class="touch-controls" id="touchControls">
+    <button class="tc-up">&uarr;</button>
+    <button class="tc-left">&larr;</button>
+    <button class="tc-down">&darr;</button>
+    <button class="tc-right">&rarr;</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const stage = document.getElementById('stage');
+  const scoreEl = document.getElementById('score');
+  const overlay = document.getElementById('overlay');
+  const startBtn = document.getElementById('startBtn');
+
+  const COLS = 20;
+  let cellSize = 0;
+  let snake, prevSnake, dir, nextDir, food, score, alive, tickTimer, speed, lastTickAt, rafId, started;
+
+  function resize() {
+    const size = Math.min(stage.clientWidth, stage.clientHeight);
+    canvas.width = size;
+    canvas.height = size;
+    cellSize = Math.floor(size / COLS);
+  }
+
+  function reset() {
+    snake = [{ x: 8, y: 10 }, { x: 7, y: 10 }, { x: 6, y: 10 }];
+    prevSnake = snake.map(s => ({ ...s }));
+    dir = { x: 1, y: 0 };
+    nextDir = { x: 1, y: 0 };
+    score = 0;
+    alive = true;
+    started = false;
+    speed = 130;
+    lastTickAt = performance.now();
+    scoreEl.textContent = '0';
+    placeFood();
+  }
+
+  function placeFood() {
+    let pos;
+    do {
+      pos = {
+        x: Math.floor(Math.random() * COLS),
+        y: Math.floor(Math.random() * COLS)
+      };
+    } while (snake.some(s => s.x === pos.x && s.y === pos.y));
+    food = pos;
+  }
+
+  // avança a lógica um "passo de grade" — a suavidade fica por conta do render
+  function tick() {
+    if (!alive) return;
+
+    prevSnake = snake.map(s => ({ ...s }));
+    dir = nextDir;
+    const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+
+    const hitWall = head.x < 0 || head.x >= COLS || head.y < 0 || head.y >= COLS;
+    const hitSelf = snake.some(s => s.x === head.x && s.y === head.y);
+
+    if (hitWall || hitSelf) {
+      gameOver();
+      return;
+    }
+
+    snake.unshift(head);
+
+    if (head.x === food.x && head.y === food.y) {
+      score++;
+      scoreEl.textContent = score;
+      placeFood();
+      if (speed > 60) speed -= 3;
+      clearInterval(tickTimer);
+      tickTimer = setInterval(tick, speed);
+    } else {
+      snake.pop();
+    }
+
+    lastTickAt = performance.now();
+  }
+
+  // --- easing para o movimento entre duas células ---
+  function easeInOutQuad(t) {
+    return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+  }
+
+  function getRenderSnake(t) {
+    const eased = easeInOutQuad(t);
+    return snake.map((seg, i) => {
+      const from = prevSnake[i] || seg;
+      return {
+        x: from.x + (seg.x - from.x) * eased,
+        y: from.y + (seg.y - from.y) * eased
+      };
+    });
+  }
+
+  function renderLoop(now) {
+    const t = alive ? Math.min(1, (now - lastTickAt) / speed) : 1;
+    draw(t, now);
+    rafId = requestAnimationFrame(renderLoop);
+  }
+
+  function draw(t = 1, now = performance.now()) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // grid sutil
+    ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+    for (let i = 0; i <= COLS; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * cellSize, 0);
+      ctx.lineTo(i * cellSize, COLS * cellSize);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, i * cellSize);
+      ctx.lineTo(COLS * cellSize, i * cellSize);
+      ctx.stroke();
+    }
+
+    drawMoney(now);
+    drawSnake(getRenderSnake(t));
+  }
+
+  function cx(gx) { return gx * cellSize + cellSize / 2; }
+  function cy(gy) { return gy * cellSize + cellSize / 2; }
+
+  // ícone de dinheiro com fundo claro para destacar do cenário escuro
+  function drawMoney(now) {
+    const x = cx(food.x), y = cy(food.y);
+    const pulse = 1 + Math.sin(now / 260) * 0.08;
+    const size = cellSize * 0.92 * pulse;
+    const discR = size * 0.52;
+
+    ctx.save();
+    ctx.translate(x, y);
+
+    // sombra
+    ctx.beginPath();
+    ctx.ellipse(0, size * 0.4, size * 0.4, size * 0.14, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.fill();
+
+    // brilho suave ao redor
+    const glow = ctx.createRadialGradient(0, 0, discR * 0.3, 0, 0, discR * 1.6);
+    glow.addColorStop(0, 'rgba(255, 255, 255, 0.45)');
+    glow.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.beginPath();
+    ctx.arc(0, 0, discR * 1.6, 0, Math.PI * 2);
+    ctx.fillStyle = glow;
+    ctx.fill();
+
+    // disco claro atrás do emoji, pra ele não "sumir" no fundo verde
+    const discGrad = ctx.createRadialGradient(-discR * 0.3, -discR * 0.3, discR * 0.1, 0, 0, discR);
+    discGrad.addColorStop(0, '#FFFFFF');
+    discGrad.addColorStop(1, '#E9EFEA');
+    ctx.beginPath();
+    ctx.arc(0, 0, discR, 0, Math.PI * 2);
+    ctx.fillStyle = discGrad;
+    ctx.fill();
+    ctx.lineWidth = Math.max(1, cellSize * 0.035);
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.stroke();
+
+    ctx.font = `${Math.round(size)}px 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('💸', 0, size * 0.04);
+
+    ctx.restore();
+  }
+
+  function roundRectPath(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function drawSnake(renderSnake) {
+    const bodyColor = getVar('--snake-body');
+    const headColor = getVar('--snake-head');
+
+    // corpo: linha contínua e arredondada seguindo as posições interpoladas
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = bodyColor;
+    ctx.lineWidth = cellSize * 0.82;
+
+    ctx.beginPath();
+    for (let i = renderSnake.length - 1; i >= 1; i--) {
+      const a = renderSnake[i], b = renderSnake[i - 1];
+      if (i === renderSnake.length - 1) ctx.moveTo(cx(a.x), cy(a.y));
+      ctx.lineTo(cx(b.x), cy(b.y));
+    }
+    ctx.stroke();
+
+    // ponta da cauda arredondada
+    const tail = renderSnake[renderSnake.length - 1];
+    ctx.beginPath();
+    ctx.arc(cx(tail.x), cy(tail.y), cellSize * 0.36, 0, Math.PI * 2);
+    ctx.fillStyle = bodyColor;
+    ctx.fill();
+
+    // leve textura: pontinhos alternados no corpo
+    ctx.fillStyle = 'rgba(0,0,0,0.07)';
+    for (let i = 1; i < renderSnake.length - 1; i += 2) {
+      const s = renderSnake[i];
+      ctx.beginPath();
+      ctx.arc(cx(s.x), cy(s.y), cellSize * 0.09, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // cabeça
+    const head = renderSnake[0];
+    const hx = cx(head.x), hy = cy(head.y);
+    const r = cellSize * 0.46;
+
+    ctx.beginPath();
+    ctx.arc(hx, hy, r, 0, Math.PI * 2);
+    ctx.fillStyle = headColor;
+    ctx.fill();
+
+    const angle = Math.atan2(dir.y, dir.x);
+    const perp = angle + Math.PI / 2;
+    const eyeOffsetForward = r * 0.35;
+    const eyeOffsetSide = r * 0.42;
+    const eyeR = Math.max(1.6, cellSize * 0.11);
+
+    [-1, 1].forEach(side => {
+      const ex = hx + Math.cos(angle) * eyeOffsetForward + Math.cos(perp) * eyeOffsetSide * side;
+      const ey = hy + Math.sin(angle) * eyeOffsetForward + Math.sin(perp) * eyeOffsetSide * side;
+
+      ctx.beginPath();
+      ctx.arc(ex, ey, eyeR, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+
+      const px = ex + Math.cos(angle) * eyeR * 0.4;
+      const py = ey + Math.sin(angle) * eyeR * 0.4;
+      ctx.beginPath();
+      ctx.arc(px, py, eyeR * 0.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#12331a';
+      ctx.fill();
+    });
+
+    if (alive) {
+      const tipX = hx + Math.cos(angle) * (r + cellSize * 0.28);
+      const tipY = hy + Math.sin(angle) * (r + cellSize * 0.28);
+      const baseX = hx + Math.cos(angle) * r * 0.95;
+      const baseY = hy + Math.sin(angle) * r * 0.95;
+      const forkSpread = cellSize * 0.1;
+
+      ctx.strokeStyle = '#D9455F';
+      ctx.lineWidth = Math.max(1.2, cellSize * 0.05);
+      ctx.beginPath();
+      ctx.moveTo(baseX, baseY);
+      ctx.lineTo(tipX, tipY);
+      ctx.moveTo(tipX, tipY);
+      ctx.lineTo(tipX + Math.cos(perp) * forkSpread, tipY + Math.sin(perp) * forkSpread);
+      ctx.moveTo(tipX, tipY);
+      ctx.lineTo(tipX - Math.cos(perp) * forkSpread, tipY - Math.sin(perp) * forkSpread);
+      ctx.stroke();
+    }
+  }
+
+  function getVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  function gameOver() {
+    alive = false;
+    started = false;
+    clearInterval(tickTimer);
+    overlay.classList.remove('hidden');
+    overlay.querySelector('h2').innerHTML = 'Você <span class="over">Perdeu!</span>';
+    overlay.querySelector('p').textContent = 'Pontuação: ' + score;
+    startBtn.textContent = 'JOGAR DE NOVO';
+  }
+
+  function start() {
+    reset();
+    overlay.classList.add('hidden');
+    clearInterval(tickTimer);
+    tickTimer = setInterval(tick, speed);
+    started = true;
+  }
+
+  function setDir(x, y) {
+    if (!started) {
+      start();
+      // ignora só se a primeira tecla for o oposto exato da direção inicial
+      // (isso mataria a cobra na hora); qualquer outra direção vale
+      if (!(dir.x === -x && dir.y === -y)) {
+        nextDir = { x, y };
+      }
+      return;
+    }
+    // compara com a direção já enfileirada (não com a direção do tick atual),
+    // senão duas teclas em sequência rápida deixam a cobra virar 180° e bater nela mesma
+    if (nextDir.x === -x && nextDir.y === -y) return;
+    nextDir = { x, y };
+  }
+
+  document.addEventListener('keydown', (e) => {
+    const map = {
+      ArrowUp: [0, -1], w: [0, -1], W: [0, -1],
+      ArrowDown: [0, 1], s: [0, 1], S: [0, 1],
+      ArrowLeft: [-1, 0], a: [-1, 0], A: [-1, 0],
+      ArrowRight: [1, 0], d: [1, 0], D: [1, 0]
+    };
+    if (map[e.key]) {
+      e.preventDefault();
+      setDir(map[e.key][0], map[e.key][1]);
+    }
+  });
+
+  document.querySelector('.tc-up').addEventListener('click', () => setDir(0, -1));
+  document.querySelector('.tc-down').addEventListener('click', () => setDir(0, 1));
+  document.querySelector('.tc-left').addEventListener('click', () => setDir(-1, 0));
+  document.querySelector('.tc-right').addEventListener('click', () => setDir(1, 0));
+
+  startBtn.addEventListener('click', start);
+
+  window.addEventListener('resize', resize);
+
+  resize();
+  reset();
+  cancelAnimationFrame(rafId);
+  rafId = requestAnimationFrame(renderLoop);
+})();
+</script>
+
+</body>
+</html>
