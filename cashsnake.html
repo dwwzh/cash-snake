@@ -255,6 +255,7 @@
       score++;
       scoreEl.textContent = score;
       placeFood();
+      playCollectSound();
       if (speed > 60) speed -= 3;
       clearInterval(tickTimer);
       tickTimer = setInterval(tick, speed);
@@ -266,7 +267,7 @@
     lastTickAt = performance.now();
   }
 
-  // partícula deixada para trás pela cauda enquanto a cobra anda
+  // partícula sutil deixada para trás pela cauda enquanto a cobra anda
   function spawnTrailParticle() {
     const tail = snake[snake.length - 1];
     particles.push({
@@ -275,8 +276,8 @@
       vx: (Math.random() - 0.5) * 0.012,
       vy: (Math.random() - 0.5) * 0.012,
       life: 0,
-      maxLife: 350 + Math.random() * 500,
-      size: cellSize * (0.18 + Math.random() * 0.3),
+      maxLife: 350 + Math.random() * 200,
+      size: cellSize * (0.06 + Math.random() * 0.04),
       color: '120, 194, 90'
     });
   }
@@ -315,24 +316,71 @@
     restartLockTimer = setTimeout(showGameOverScreen, 550);
   }
 
+  // helper compartilhado: cria o AudioContext uma vez só e reaproveita
+  function getAudioCtx() {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    return audioCtx;
+  }
+
   // som curto sintetizado (sem precisar de arquivo de áudio externo)
   function playDeathSound() {
     try {
-      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-      const now = audioCtx.currentTime;
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
+      const ctxA = getAudioCtx();
+      const now = ctxA.currentTime;
+      const osc = ctxA.createOscillator();
+      const gain = ctxA.createGain();
       osc.type = 'sawtooth';
       osc.frequency.setValueAtTime(240, now);
       osc.frequency.exponentialRampToValueAtTime(55, now + 0.35);
       gain.gain.setValueAtTime(0.22, now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
       osc.connect(gain);
-      gain.connect(audioCtx.destination);
+      gain.connect(ctxA.destination);
       osc.start(now);
       osc.stop(now + 0.4);
     } catch (e) {
       // autoplay bloqueado ou API indisponível — ignora silenciosamente
+    }
+  }
+
+  // blip curto ao virar de direção
+  function playTurnSound() {
+    try {
+      const ctxA = getAudioCtx();
+      const now = ctxA.currentTime;
+      const osc = ctxA.createOscillator();
+      const gain = ctxA.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(560, now);
+      gain.gain.setValueAtTime(0.06, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+      osc.connect(gain);
+      gain.connect(ctxA.destination);
+      osc.start(now);
+      osc.stop(now + 0.05);
+    } catch (e) {
+      // ignora silenciosamente
+    }
+  }
+
+  // som ascendente ao coletar dinheiro
+  function playCollectSound() {
+    try {
+      const ctxA = getAudioCtx();
+      const now = ctxA.currentTime;
+      const osc = ctxA.createOscillator();
+      const gain = ctxA.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(680, now);
+      osc.frequency.exponentialRampToValueAtTime(1150, now + 0.12);
+      gain.gain.setValueAtTime(0.16, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+      osc.connect(gain);
+      gain.connect(ctxA.destination);
+      osc.start(now);
+      osc.stop(now + 0.18);
+    } catch (e) {
+      // ignora silenciosamente
     }
   }
 
@@ -601,6 +649,7 @@
     // compara com a direção já enfileirada (não com a direção do tick atual),
     // senão duas teclas em sequência rápida deixam a cobra virar 180° e bater nela mesma
     if (nextDir.x === -x && nextDir.y === -y) return;
+    if (nextDir.x !== x || nextDir.y !== y) playTurnSound();
     nextDir = { x, y };
   }
 
