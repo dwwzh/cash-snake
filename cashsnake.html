@@ -152,7 +152,7 @@
 <body>
 
 <div id="stage">
-  <div class="hud">PONTOS: <span id="score">0</span></div>
+  <div class="hud">dinheiro: <span id="score">0</span></div>
   <canvas id="game"></canvas>
   <div class="overlay" id="overlay">
     <h2></h2>
@@ -442,7 +442,7 @@
     clearInterval(tickTimer);
     overlay.classList.remove('hidden');
     overlay.querySelector('h2').innerHTML = 'Você <span class="over">Perdeu!</span>';
-    overlay.querySelector('p').textContent = 'Pontuação: ' + score;
+    overlay.querySelector('p').textContent = 'Dinheiro Coletado: ' + score;
     startBtn.textContent = 'JOGAR DE NOVO';
   }
 
