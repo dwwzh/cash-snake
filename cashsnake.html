@@ -95,8 +95,12 @@
   color: rgb(128, 255, 128);
 }
 
-.overlay h2:empty {
-  display: none;
+  .overlay h2:empty {
+    display: none;
+}
+
+  .overlay p:empty {
+    display: none;
 }
 
   .overlay p {
@@ -121,6 +125,10 @@
   .overlay button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .overlay button.startbtn {
+    font-size: clamp(26px, 2.2vmin, 16px);
   }
 
   .touch-controls {
@@ -161,10 +169,9 @@
   <canvas id="game"></canvas>
   <div class="overlay" id="overlay">
     <h2></h2>
-    <p>Toque em jogar ou pressione uma tecla para começar</p>
-    <button id="startBtn">JOGAR</button>
+    <p></p>
+    <button id="startBtn" class="startbtn">JOGAR</button>
   </div>
-
   <div class="touch-controls" id="touchControls">
     <button class="tc-up">&uarr;</button>
     <button class="tc-left">&larr;</button>
@@ -451,6 +458,7 @@
     overlay.querySelector('h2').innerHTML = 'Você <span class="over">Perdeu!</span>';
     overlay.querySelector('p').textContent = 'Dinheiro Coletado: ' + score;
     startBtn.textContent = 'JOGAR DE NOVO';
+    startBtn.classList.remove('startbtn');
     restartLocked = true;
     startBtn.disabled = true;
     clearTimeout(restartLockTimer);
