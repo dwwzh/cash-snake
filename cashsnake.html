@@ -44,6 +44,9 @@
     max-width: 100vmin;
     max-height: 100vmin;
     background: var(--bg);
+    border: 2px solid rgba(120, 194, 90, 0.55);
+    border-radius: 18px;
+    overflow: hidden;
   }
 
   canvas {
@@ -195,6 +198,8 @@
   let restartLocked = false;
   let restartLockTimer;
   let particles = [];
+  let smokeParticles = [];
+  let lastSmokeAt = 0;
   let flashAlpha = 0;
   let lastFrameAt = null;
   let audioCtx;
@@ -217,6 +222,7 @@
     speed = 130;
     lastTickAt = performance.now();
     particles = [];
+    smokeParticles = [];
     flashAlpha = 0;
     scoreEl.textContent = '0';
     placeFood();
@@ -276,8 +282,8 @@
       vx: (Math.random() - 0.5) * 0.012,
       vy: (Math.random() - 0.5) * 0.012,
       life: 0,
-      maxLife: 350 + Math.random() * 500,
-      size: cellSize * (0.06 + Math.random() * 0.3),
+      maxLife: 350 + Math.random() * 200,
+      size: cellSize * (0.06 + Math.random() * 0.04),
       color: '120, 194, 90'
     });
   }
@@ -413,7 +419,8 @@
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // grid sutil
-    ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(255,255,255,0.09)';
     for (let i = 0; i <= COLS; i++) {
       ctx.beginPath();
       ctx.moveTo(i * cellSize, 0);
@@ -427,7 +434,8 @@
 
     drawMoney(now);
     drawParticles();
-    drawSnake(getRenderSnake(t));
+    drawSnake(getRenderSnake(t), now);
+    drawSmoke();
     drawFlash();
   }
 
@@ -438,6 +446,14 @@
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       if (p.life >= p.maxLife) particles.splice(i, 1);
+    }
+    for (let i = smokeParticles.length - 1; i >= 0; i--) {
+      const p = smokeParticles[i];
+      p.life += dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.size += dt * 0.0003 * cellSize;
+      if (p.life >= p.maxLife) smokeParticles.splice(i, 1);
     }
     if (flashAlpha > 0) {
       flashAlpha = Math.max(0, flashAlpha - dt / 350);
@@ -452,6 +468,73 @@
       ctx.arc(p.x, p.y, p.size * (1 - t * 0.4), 0, Math.PI * 2);
       ctx.fillStyle = `rgba(${p.color}, ${alpha})`;
       ctx.fill();
+    });
+  }
+
+  function spawnSmoke(x, y, now) {
+    if (now - lastSmokeAt < 190) return;
+    lastSmokeAt = now;
+    const lobeCount = 2 + Math.floor(Math.random() * 2);
+    const lobes = [];
+    for (let i = 0; i < lobeCount; i++) {
+      lobes.push({
+        ox: (Math.random() - 0.5) * cellSize * 0.09,
+        oy: (Math.random() - 0.5) * cellSize * 0.06,
+        scale: 0.55 + Math.random() * 0.45
+      });
+    }
+    smokeParticles.push({
+      x, y,
+      baseX: x,
+      vx: (Math.random() - 0.5) * 0.003,
+      vy: -0.015 - Math.random() * 0.011,
+      wobbleAmp: cellSize * (0.05 + Math.random() * 0.06),
+      wobbleFreq: 0.0022 + Math.random() * 0.0018,
+      wobblePhase: Math.random() * Math.PI * 2,
+      turbAmp: cellSize * (0.02 + Math.random() * 0.025),
+      turbFreq: 0.006 + Math.random() * 0.004,
+      turbPhase: Math.random() * Math.PI * 2,
+      rot: Math.random() * Math.PI * 2,
+      rotSpeed: (Math.random() - 0.5) * 0.0009,
+      life: 0,
+      maxLife: 1150 + Math.random() * 550,
+      size: cellSize * (0.05 + Math.random() * 0.02),
+      growth: cellSize * (0.11 + Math.random() * 0.07),
+      lobes
+    });
+  }
+
+  function drawSmoke() {
+    smokeParticles.forEach(p => {
+      const t = p.life / p.maxLife;
+      const eased = 1 - Math.pow(1 - t, 2);
+      const size = p.size + eased * p.growth;
+      const stretch = 1 + eased * 0.35;
+      const wobble = Math.sin(p.life * p.wobbleFreq + p.wobblePhase) * p.wobbleAmp * t;
+      const turb = Math.sin(p.life * p.turbFreq + p.turbPhase) * p.turbAmp * t;
+      const x = p.x + wobble + turb;
+      const y = p.y;
+      const fade = t < 0.15 ? t / 0.15 : 1 - (t - 0.15) / 0.85;
+      const alpha = Math.max(0, fade) * 0.4;
+      if (alpha <= 0.002) return;
+      const rot = p.rot + p.life * p.rotSpeed;
+      p.lobes.forEach((lobe, i) => {
+        const cos = Math.cos(rot), sin = Math.sin(rot);
+        const lx = lobe.ox * (1 + eased * 0.8);
+        const ly = lobe.oy * (1 + eased * 0.8) * stretch;
+        const px = x + lx * cos - ly * sin;
+        const py = y + lx * sin + ly * cos - eased * cellSize * 0.02 * i;
+        const lobeSize = size * lobe.scale;
+        const lobeAlpha = alpha * (0.75 + lobe.scale * 0.25);
+        const grad = ctx.createRadialGradient(px, py, 0, px, py, lobeSize);
+        grad.addColorStop(0, `rgba(235, 235, 235, ${lobeAlpha})`);
+        grad.addColorStop(0.6, `rgba(235, 235, 235, ${lobeAlpha * 0.55})`);
+        grad.addColorStop(1, `rgba(235, 235, 235, 0)`);
+        ctx.beginPath();
+        ctx.arc(px, py, lobeSize, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.fill();
+      });
     });
   }
 
@@ -519,21 +602,36 @@
     ctx.closePath();
   }
 
-  function drawSnake(renderSnake) {
+  function drawSnake(renderSnake, now) {
     const bodyColor = getVar('--snake-body');
     const headColor = getVar('--snake-head');
+    const suitColor = '#181818';
 
-    // corpo: linha contínua e arredondada seguindo as posições interpoladas
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-    ctx.strokeStyle = bodyColor;
     ctx.lineWidth = cellSize * 0.82;
 
+    // ponto que divide o corpo ao meio: da cabeça até aqui é "terno" (escuro),
+    // daqui até a cauda continua a cor normal da cobra
+    const splitIndex = Math.max(1, Math.floor((renderSnake.length - 1) / 2));
+
+    // metade de trás — cor normal do corpo
+    ctx.strokeStyle = bodyColor;
     ctx.beginPath();
-    for (let i = renderSnake.length - 1; i >= 1; i--) {
-      const a = renderSnake[i], b = renderSnake[i - 1];
+    for (let i = renderSnake.length - 1; i >= splitIndex; i--) {
+      const a = renderSnake[i];
       if (i === renderSnake.length - 1) ctx.moveTo(cx(a.x), cy(a.y));
-      ctx.lineTo(cx(b.x), cy(b.y));
+      else ctx.lineTo(cx(a.x), cy(a.y));
+    }
+    ctx.stroke();
+
+    // metade da frente — terno (cor escura), do meio do corpo até a cabeça
+    ctx.strokeStyle = suitColor;
+    ctx.beginPath();
+    for (let i = splitIndex; i >= 0; i--) {
+      const a = renderSnake[i];
+      if (i === splitIndex) ctx.moveTo(cx(a.x), cy(a.y));
+      else ctx.lineTo(cx(a.x), cy(a.y));
     }
     ctx.stroke();
 
@@ -563,6 +661,8 @@
     ctx.fillStyle = headColor;
     ctx.fill();
 
+    drawAccessories(hx, hy, r, renderSnake, now);
+
     const angle = Math.atan2(dir.y, dir.x);
     const perp = angle + Math.PI / 2;
     const eyeOffsetForward = r * 0.35;
@@ -586,24 +686,110 @@
       ctx.fill();
     });
 
-    if (alive) {
-      const tipX = hx + Math.cos(angle) * (r + cellSize * 0.28);
-      const tipY = hy + Math.sin(angle) * (r + cellSize * 0.28);
-      const baseX = hx + Math.cos(angle) * r * 0.95;
-      const baseY = hy + Math.sin(angle) * r * 0.95;
-      const forkSpread = cellSize * 0.1;
+  }
 
-      ctx.strokeStyle = '#D9455F';
-      ctx.lineWidth = Math.max(1.2, cellSize * 0.05);
-      ctx.beginPath();
-      ctx.moveTo(baseX, baseY);
-      ctx.lineTo(tipX, tipY);
-      ctx.moveTo(tipX, tipY);
-      ctx.lineTo(tipX + Math.cos(perp) * forkSpread, tipY + Math.sin(perp) * forkSpread);
-      ctx.moveTo(tipX, tipY);
-      ctx.lineTo(tipX - Math.cos(perp) * forkSpread, tipY - Math.sin(perp) * forkSpread);
-      ctx.stroke();
-    }
+  // terno (paletó + colarinho + gravata borboleta) preso ao corpo, cartola e charuto na cabeça
+  function drawAccessories(hx, hy, r, renderSnake, now) {
+    const flip = dir.x < 0 ? -1 : 1;
+
+    // ponto do "pescoço": o segmento logo atrás da cabeça, usado para orientar o terno
+    const neck = renderSnake[1] || { x: renderSnake[0].x - dir.x, y: renderSnake[0].y - dir.y };
+    const nx = cx(neck.x), ny = cy(neck.y);
+    const bodyAngle = Math.atan2(ny - hy, nx - hx);
+
+    // posição do terno: um pouco à frente do pescoço, colado na base da cabeça
+    const suitX = hx + Math.cos(bodyAngle) * r * 1.5;
+    const suitY = hy + Math.sin(bodyAngle) * r * 1.5;
+
+    ctx.save();
+    ctx.translate(suitX, suitY);
+    ctx.rotate(bodyAngle + Math.PI / 2); // gira o colarinho para ficar "de frente" ao corpo, como uma gola
+
+    // lapelas do paletó (mais largas e escuras, por trás do colarinho)
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.95, r * 0.05);
+    ctx.lineTo(-r * 0.28, -r * 0.32);
+    ctx.lineTo(-r * 0.1, r * 0.55);
+    ctx.lineTo(-r * 0.75, r * 0.7);
+    ctx.closePath();
+    ctx.moveTo(r * 0.95, r * 0.05);
+    ctx.lineTo(r * 0.28, -r * 0.32);
+    ctx.lineTo(r * 0.1, r * 0.55);
+    ctx.lineTo(r * 0.75, r * 0.7);
+    ctx.closePath();
+    ctx.fillStyle = '#171717';
+    ctx.fill();
+
+    // colarinho branco
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.5, -r * 0.18);
+    ctx.lineTo(0, r * 0.26);
+    ctx.lineTo(r * 0.5, -r * 0.18);
+    ctx.closePath();
+    ctx.fillStyle = '#f4f4f4';
+    ctx.fill();
+
+    ctx.restore();
+
+    // cartola em cima da cabeça (sempre em pé, sem girar)
+    ctx.save();
+    ctx.translate(hx, hy - r * 1.2);
+    const hatW = r * 1.2;
+
+    ctx.beginPath();
+    ctx.ellipse(0, r * 0.24, hatW * 0.6, hatW * 0.17, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#151515';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(-hatW * 0.32, r * 0.16);
+    ctx.lineTo(-hatW * 0.27, -r * 0.85);
+    ctx.lineTo(hatW * 0.27, -r * 0.85);
+    ctx.lineTo(hatW * 0.32, r * 0.16);
+    ctx.closePath();
+    ctx.fillStyle = '#1c1c1c';
+    ctx.fill();
+
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.fillRect(-hatW * 0.3, -r * 0.08, hatW * 0.6, r * 0.15);
+
+    ctx.beginPath();
+    ctx.ellipse(0, -r * 0.85, hatW * 0.27, hatW * 0.09, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#262626';
+    ctx.fill();
+    ctx.restore();
+
+    // charuto fino saindo do canto da boca (espelha conforme a direção)
+    const cigarBaseX = hx + flip * r * 0.5;
+    const cigarBaseY = hy + r * 0.16;
+    const cigarLen = r * 1.35;
+    const cigarAngle = -0.3;
+    const cigarThickness = r * 0.38;
+
+    ctx.save();
+    ctx.translate(cigarBaseX, cigarBaseY);
+    ctx.scale(flip, 1);
+    ctx.rotate(cigarAngle);
+
+    roundRectPath(0, -cigarThickness / 2, cigarLen, cigarThickness, cigarThickness * 0.5);
+    ctx.fillStyle = '#8a6339';
+    ctx.fill();
+
+    // faixa dourada fina perto da ponta, estilo charuto/cigarrilha
+    ctx.fillStyle = 'rgba(230, 200, 140, 0.9)';
+    ctx.fillRect(cigarLen * 0.68, -cigarThickness / 2, cigarLen * 0.08, cigarThickness);
+
+    ctx.beginPath();
+    ctx.arc(cigarLen, 0, cigarThickness * 0.55, 0, Math.PI * 2);
+    ctx.fillStyle = '#e8734a';
+    ctx.fill();
+    ctx.restore();
+
+    // posição real (no mundo) da ponta acesa, pra fumaça nascer no lugar certo
+    const cos = Math.cos(cigarAngle), sin = Math.sin(cigarAngle);
+    const tipX = cigarBaseX + flip * cigarLen * cos;
+    const tipY = cigarBaseY + cigarLen * sin;
+    spawnSmoke(tipX, tipY, now);
   }
 
   function getVar(name) {
