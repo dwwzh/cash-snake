@@ -40,12 +40,12 @@
   #stage {
     position: relative;
     width: 100%;
-    height: 100%;
+    height: auto;
+    aspect-ratio: 1 / 1;
     max-width: 100vmin;
     max-height: 100vmin;
     background: var(--bg);
     border: 2px solid rgba(120, 194, 90, 0.55);
-    border-radius: 18px;
     overflow: hidden;
   }
 
@@ -194,13 +194,14 @@
   const COLS = 20;
   const RESTART_COOLDOWN_MS = 900;
   let cellSize = 0;
-  let snake, prevSnake, dir, nextDir, food, score, alive, tickTimer, speed, lastTickAt, rafId, started;
+  let snake, prevSnake, dir, prevDir, nextDir, food, score, alive, speed, tickAcc, rafId, started;
   let restartLocked = false;
   let restartLockTimer;
   let particles = [];
   let smokeParticles = [];
   let lastSmokeAt = 0;
   let flashAlpha = 0;
+  let turnQueuedThisTick = false;
   let lastFrameAt = null;
   let audioCtx;
 
@@ -215,12 +216,13 @@
     snake = [{ x: 8, y: 10 }, { x: 7, y: 10 }, { x: 6, y: 10 }];
     prevSnake = snake.map(s => ({ ...s }));
     dir = { x: 1, y: 0 };
+    prevDir = { x: 1, y: 0 };
     nextDir = { x: 1, y: 0 };
     score = 0;
     alive = true;
     started = false;
     speed = 130;
-    lastTickAt = performance.now();
+    tickAcc = 0;
     particles = [];
     smokeParticles = [];
     flashAlpha = 0;
@@ -244,11 +246,17 @@
     if (!alive) return;
 
     prevSnake = snake.map(s => ({ ...s }));
+    prevDir = dir;
     dir = nextDir;
+    turnQueuedThisTick = false;
     const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
 
+    const willEat = head.x === food.x && head.y === food.y;
+    // se não vai comer, a cauda sai do lugar neste mesmo passo — não conta como colisão
+    const bodyToCheck = willEat ? snake : snake.slice(0, -1);
+
     const hitWall = head.x < 0 || head.x >= COLS || head.y < 0 || head.y >= COLS;
-    const hitSelf = snake.some(s => s.x === head.x && s.y === head.y);
+    const hitSelf = bodyToCheck.some(s => s.x === head.x && s.y === head.y);
 
     if (hitWall || hitSelf) {
       triggerDeath();
@@ -257,20 +265,17 @@
 
     snake.unshift(head);
 
-    if (head.x === food.x && head.y === food.y) {
+    if (willEat) {
       score++;
       scoreEl.textContent = score;
       placeFood();
       playCollectSound();
-      if (speed > 60) speed -= 3;
-      clearInterval(tickTimer);
-      tickTimer = setInterval(tick, speed);
+      if (speed > 40) speed -= 1;
     } else {
       snake.pop();
     }
 
     spawnTrailParticle();
-    lastTickAt = performance.now();
   }
 
   // partícula sutil deixada para trás pela cauda enquanto a cobra anda
@@ -292,7 +297,6 @@
   function triggerDeath() {
     alive = false;
     started = false;
-    clearInterval(tickTimer);
 
     snake.forEach(seg => {
       for (let i = 0; i < 5; i++) {
@@ -407,9 +411,21 @@
   }
 
   function renderLoop(now) {
-    const t = alive ? Math.min(1, (now - lastTickAt) / speed) : 1;
-    const dt = lastFrameAt ? now - lastFrameAt : 16;
+    // trava o dt (ex.: aba em segundo plano) pra não gerar uma rajada de ticks ao voltar
+    const dt = lastFrameAt ? Math.min(now - lastFrameAt, 250) : 16;
     lastFrameAt = now;
+
+    if (alive && started) {
+      tickAcc += dt;
+      // roda os ticks que já "venceram" no mesmo relógio do render — sem isso,
+      // um setInterval separado ia dessincronizar do rAF assim que speed ficasse baixo
+      while (alive && tickAcc >= speed) {
+        tickAcc -= speed;
+        tick();
+      }
+    }
+
+    const t = alive ? Math.min(1, tickAcc / speed) : 1;
     updateParticles(dt);
     draw(t, now);
     rafId = requestAnimationFrame(renderLoop);
@@ -434,7 +450,7 @@
 
     drawMoney(now);
     drawParticles();
-    drawSnake(getRenderSnake(t), now);
+    drawSnake(getRenderSnake(t), t, now);
     drawSmoke();
     drawFlash();
   }
@@ -550,44 +566,41 @@
   // ícone de dinheiro com fundo claro para destacar do cenário escuro
   function drawMoney(now) {
     const x = cx(food.x), y = cy(food.y);
-    const pulse = 1 + Math.sin(now / 260) * 0.08;
-    const size = cellSize * 0.92 * pulse;
-    const discR = size * 0.52;
+    const pulse = 1 + Math.sin(now / 260) * 0.06;
+    const size = cellSize * 1.20 * pulse;
+    const discR = size * 0.55;
 
     ctx.save();
     ctx.translate(x, y);
 
     // sombra
     ctx.beginPath();
-    ctx.ellipse(0, size * 0.4, size * 0.4, size * 0.14, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, size * 0.4, size * 0.38, size * 0.13, 0, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(0,0,0,0.2)';
     ctx.fill();
 
-    // brilho suave ao redor
-    const glow = ctx.createRadialGradient(0, 0, discR * 0.3, 0, 0, discR * 1.6);
-    glow.addColorStop(0, 'rgba(255, 255, 255, 0.45)');
+    // brilho suave ao redor (glow branco)
+    const glow = ctx.createRadialGradient(0, 0, discR * 0.3, 0, 0, discR * 1.7);
+    glow.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
+    glow.addColorStop(0.5, 'rgba(255, 255, 255, 0.1)');
     glow.addColorStop(1, 'rgba(255, 255, 255, 0)');
     ctx.beginPath();
-    ctx.arc(0, 0, discR * 1.6, 0, Math.PI * 2);
+    ctx.arc(0, 0, discR * 1.7, 0, Math.PI * 2);
     ctx.fillStyle = glow;
     ctx.fill();
 
-    // disco claro atrás do emoji, pra ele não "sumir" no fundo verde
-    const discGrad = ctx.createRadialGradient(-discR * 0.3, -discR * 0.3, discR * 0.1, 0, 0, discR);
-    discGrad.addColorStop(0, '#FFFFFF');
-    discGrad.addColorStop(1, '#E9EFEA');
+    // anel verde discreto
+    const ringPulse = 1 + Math.sin(now / 260 + Math.PI / 2) * 0.06;
     ctx.beginPath();
-    ctx.arc(0, 0, discR, 0, Math.PI * 2);
-    ctx.fillStyle = discGrad;
-    ctx.fill();
-    ctx.lineWidth = Math.max(1, cellSize * 0.035);
-    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.arc(0, 0, discR * 1.1 * ringPulse, 0, Math.PI * 2);
+    ctx.lineWidth = Math.max(1, cellSize * 0.028);
+    ctx.strokeStyle = 'rgba(120, 220, 130, 0.4)';
     ctx.stroke();
 
     ctx.font = `${Math.round(size)}px 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('💸', 0, size * 0.04);
+    ctx.fillText('💰', 0, size * 0.04);
 
     ctx.restore();
   }
@@ -602,7 +615,7 @@
     ctx.closePath();
   }
 
-  function drawSnake(renderSnake, now) {
+  function drawSnake(renderSnake, t, now) {
     const bodyColor = getVar('--snake-body');
     const headColor = getVar('--snake-head');
     const suitColor = '#181818';
@@ -663,7 +676,15 @@
 
     drawAccessories(hx, hy, r, renderSnake, now);
 
-    const angle = Math.atan2(dir.y, dir.x);
+    // interpola o ângulo da cabeça de prevDir -> dir com o mesmo progresso do corpo,
+    // em vez de usar "dir" cru, que muda de golpe no instante do tick e destoa
+    // do corpo (que desliza suave) — isso que fazia parecer "tremer" nas curvas
+    const eased = easeInOutQuad(t);
+    const a0 = Math.atan2(prevDir.y, prevDir.x);
+    const a1 = Math.atan2(dir.y, dir.x);
+    let angleDiff = a1 - a0;
+    angleDiff = Math.atan2(Math.sin(angleDiff), Math.cos(angleDiff)); // menor caminho angular
+    const angle = a0 + angleDiff * eased;
     const perp = angle + Math.PI / 2;
     const eyeOffsetForward = r * 0.35;
     const eyeOffsetSide = r * 0.42;
@@ -759,9 +780,20 @@
     ctx.fill();
     ctx.restore();
 
-    // charuto fino saindo do canto da boca (espelha conforme a direção)
-    const cigarBaseX = hx + flip * r * 0.5;
-    const cigarBaseY = hy + r * 0.16;
+    // charuto fino saindo do canto da boca (acompanha a direção real do movimento,
+    // pra continuar "na boca" e não deslizar pra região da orelha quando anda na vertical)
+    let cigarBaseX, cigarBaseY;
+    if (dir.y === 0) {
+      // horizontal: charuto embaixo do focinho, espelhado conforme esquerda/direita
+      cigarBaseX = hx + flip * r * 0.5;
+      cigarBaseY = hy + r * 0.16;
+    } else {
+      // vertical: a "frente" da cabeça é pra cima ou pra baixo. Os olhos ficam em
+      // (±0.42r lateral, 0.35r pra frente) — o charuto precisa ficar mais pra frente
+      // e mais central que isso, senão cai em cima do olho
+      cigarBaseX = hx + r * 0.25;
+      cigarBaseY = hy + dir.y * r * 0.58;
+    }
     const cigarLen = r * 1.35;
     const cigarAngle = -0.3;
     const cigarThickness = r * 0.38;
@@ -816,8 +848,7 @@
     if (restartLocked) return;
     reset();
     overlay.classList.add('hidden');
-    clearInterval(tickTimer);
-    tickTimer = setInterval(tick, speed);
+    tickAcc = 0;
     started = true;
   }
 
@@ -832,10 +863,17 @@
       }
       return;
     }
+    // só aceita uma mudança de direção por passo da grade — evita que
+    // 3+ teclas em sequência muito rápida (comum ao girar 360°) acabem
+    // formando um giro de 180° efetivo em relação à direção real da cobra
+    if (turnQueuedThisTick) return;
     // compara com a direção já enfileirada (não com a direção do tick atual),
     // senão duas teclas em sequência rápida deixam a cobra virar 180° e bater nela mesma
     if (nextDir.x === -x && nextDir.y === -y) return;
-    if (nextDir.x !== x || nextDir.y !== y) playTurnSound();
+    if (nextDir.x !== x || nextDir.y !== y) {
+      playTurnSound();
+      turnQueuedThisTick = true;
+    }
     nextDir = { x, y };
   }
 
